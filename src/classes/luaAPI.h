@@ -47,7 +47,7 @@ public:
 	bool luaFunctionExists(String functionName);
 
 	Variant pullVariant(String name);
-	Variant callFunction(String functionName, Array args);
+	Variant callFunction(String functionName, const Array& args);
 	Variant doFile(String fileName, Array args);
 	Variant doString(String code, Array args);
 	Variant getRegistryValue(String name);

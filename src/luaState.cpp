@@ -9,7 +9,6 @@
 #include <classes/luaTuple.h>
 
 #include <lua_libraries.h>
-
 #include <util.h>
 
 void LuaState::setState(lua_State *state, LuaAPI *api, bool bindAPI) {
@@ -44,6 +43,7 @@ void LuaState::setState(lua_State *state, LuaAPI *api, bool bindAPI) {
 lua_State *LuaState::getState() const {
 	return L;
 }
+#include <iostream>
 
 // Binds lua libraries with the lua state
 Ref<LuaError> LuaState::bindLibraries(TypedArray<String> libs) {
@@ -146,7 +146,7 @@ Variant LuaState::getRegistryValue(String name) {
 	return val;
 }
 
-Ref<LuaError> LuaState::setRegistryValue(String name, Variant var) {
+Ref<LuaError> LuaState::setRegistryValue(String name, const Variant& var) {
 	lua_pushvalue(L, LUA_REGISTRYINDEX);
 	String field = indexForWriting(name);
 	if (lua_isnil(L, -1)) {
@@ -164,7 +164,8 @@ Ref<LuaError> LuaState::setRegistryValue(String name, Variant var) {
 }
 
 // call a Lua function from GDScript
-Variant LuaState::callFunction(String functionName, Array args) {
+Variant LuaState::callFunction(String functionName, const Array& args) {
+
 	// push the error handler on to the stack
 	lua_pushcfunction(L, luaErrorHandler);
 
@@ -190,12 +191,12 @@ Variant LuaState::callFunction(String functionName, Array args) {
 }
 
 // Push a GD Variant to the lua stack and returns a error if the type is not supported
-Ref<LuaError> LuaState::pushVariant(Variant var) const {
+Ref<LuaError> LuaState::pushVariant(const Variant& var) const {
 	return LuaState::pushVariant(L, var);
 }
 
 // Call pushVariant() and set it to a global name
-Ref<LuaError> LuaState::pushGlobalVariant(String name, Variant var) {
+Ref<LuaError> LuaState::pushGlobalVariant(String name, const Variant& var) {
 #ifndef LAPI_LUAJIT
 	lua_pushglobaltable(L);
 #else
@@ -233,227 +234,301 @@ LuaAPI *LuaState::getAPI(lua_State *state) {
 	return api;
 }
 
-// Push a GD Variant to the lua stack and returns a error if the type is not supported
-Ref<LuaError> LuaState::pushVariant(lua_State *state, Variant var) {
-	switch (var.get_type()) {
-		case Variant::Type::NIL:
-			lua_pushnil(state);
-			break;
-		case Variant::Type::STRING:
-			lua_pushstring(state, (var.operator String()).utf8().get_data());
-			break;
-		case Variant::Type::INT:
-			lua_pushinteger(state, (int64_t)var);
-			break;
-		case Variant::Type::FLOAT:
-			lua_pushnumber(state, var.operator double());
-			break;
-		case Variant::Type::BOOL:
-			lua_pushboolean(state, (bool)var);
-			break;
-		case Variant::Type::PACKED_BYTE_ARRAY:
-		case Variant::Type::PACKED_INT64_ARRAY:
-		case Variant::Type::PACKED_INT32_ARRAY:
-		case Variant::Type::PACKED_STRING_ARRAY:
-		case Variant::Type::PACKED_FLOAT64_ARRAY:
-		case Variant::Type::PACKED_FLOAT32_ARRAY:
-		case Variant::Type::PACKED_VECTOR2_ARRAY:
-		case Variant::Type::PACKED_VECTOR3_ARRAY:
-		case Variant::Type::PACKED_COLOR_ARRAY:
-		case Variant::Type::ARRAY: {
-			Array array = var.operator Array();
-			lua_createtable(state, 0, array.size());
+template<class T>
+Ref<LuaError> _push_array_helper(lua_State* state, const Variant& var)
+{
+	const T& array = var.operator T();
+	lua_createtable(state, array.size(), 0);
 
-			for (int i = 0; i < array.size(); i++) {
-				Variant key = i + 1;
-				Variant value = array[i];
+	for (int i = 0; i < array.size(); i++) {
+		Variant key = i + 1;
+		const Variant& value = array[i];
 
-				Ref<LuaError> err = pushVariant(state, key);
-				if (!err.is_null()) {
-					return err;
-				}
-
-				err = pushVariant(state, value);
-				if (!err.is_null()) {
-					return err;
-				}
-
-				lua_settable(state, -3);
-			}
-			break;
+		Ref<LuaError> err = LuaState::pushVariant(state, key);
+		if (!err.is_null()) {
+			return err;
 		}
-		case Variant::Type::DICTIONARY: {
-			Dictionary dict = var.operator Dictionary();
-			lua_createtable(state, 0, dict.size());
 
-			Array keys = dict.keys();
-			for (int i = 0; i < dict.size(); i++) {
-				Variant key = keys[i];
-				Variant value = dict[key];
-
-				Ref<LuaError> err = pushVariant(state, key);
-				if (!err.is_null()) {
-					return err;
-				}
-
-				err = pushVariant(state, value);
-				if (!err.is_null()) {
-					return err;
-				}
-
-				lua_settable(state, -3);
-			}
-			break;
+		err = LuaState::pushVariant(state, value);
+		if (!err.is_null()) {
+			return err;
 		}
-		case Variant::Type::VECTOR2: {
-			Variant *userdata = (Variant *)lua_newuserdata(state, sizeof(Variant));
-			memnew_placement(userdata, Variant(var));
-			luaL_setmetatable(state, "mt_Vector2");
-			break;
-		}
-		case Variant::Type::VECTOR3: {
-			Variant *userdata = (Variant *)lua_newuserdata(state, sizeof(Variant));
-			memnew_placement(userdata, Variant(var));
-			luaL_setmetatable(state, "mt_Vector3");
-			break;
-		}
-		case Variant::Type::COLOR: {
-			Variant *userdata = (Variant *)lua_newuserdata(state, sizeof(Variant));
-			memnew_placement(userdata, Variant(var));
-			luaL_setmetatable(state, "mt_Color");
-			break;
-		}
-		case Variant::Type::RECT2: {
-			Variant *userdata = (Variant *)lua_newuserdata(state, sizeof(Variant));
-			memnew_placement(userdata, Variant(var));
-			luaL_setmetatable(state, "mt_Rect2");
-			break;
-		}
-		case Variant::Type::PLANE: {
-			Variant *userdata = (Variant *)lua_newuserdata(state, sizeof(Variant));
-			memnew_placement(userdata, Variant(var));
-			luaL_setmetatable(state, "mt_Plane");
-			break;
-		}
-		case Variant::Type::SIGNAL: {
-			Variant *userdata = (Variant *)lua_newuserdata(state, sizeof(Variant));
-			memnew_placement(userdata, Variant(var));
-			luaL_setmetatable(state, "mt_Signal");
-			break;
-		}
-		case Variant::Type::OBJECT: {
-			if (var.operator Object *() == nullptr) {
-				lua_pushnil(state);
-				break;
-			}
 
-			// If the type being pushed is a lua error, Raise an error
-#ifndef LAPI_GDEXTENSION
-			if (Ref<LuaError> err = Object::cast_to<LuaError>(var.operator Object *()); !err.is_null()) {
-#else
-			// blame this on https://github.com/godotengine/godot-cpp/issues/995
-			if (Ref<LuaError> err = dynamic_cast<LuaError *>(var.operator Object *()); !err.is_null()) {
-#endif
-				lua_pushstring(state, err->getMessage().utf8().get_data());
-				lua_error(state);
-				break;
-			}
-
-// If the type being pushed is a tuple, push its content instead.
-#ifndef LAPI_GDEXTENSION
-			if (Ref<LuaTuple> tuple = Object::cast_to<LuaTuple>(var.operator Object *()); tuple.is_valid()) {
-#else
-			// blame this on https://github.com/godotengine/godot-cpp/issues/995
-			if (Ref<LuaTuple> tuple = dynamic_cast<LuaTuple *>(var.operator Object *()); tuple.is_valid()) {
-#endif
-				for (int i = 0; i < tuple->size(); i++) {
-					Variant value = tuple->get(i);
-					pushVariant(state, value);
-				}
-				break;
-			}
-
-// If the type being pushed is a thread, push a LUA_TTHREAD state.
-#ifndef LAPI_GDEXTENSION
-			if (Ref<LuaCoroutine> thread = Object::cast_to<LuaCoroutine>(var.operator Object *()); thread.is_valid()) {
-#else
-			// blame this on https://github.com/godotengine/godot-cpp/issues/995
-			if (Ref<LuaCoroutine> thread = dynamic_cast<LuaCoroutine *>(var.operator Object *()); thread.is_valid()) {
-#endif
-				return LuaError::newError("pushing threads is currently not supported.", LuaError::ERR_TYPE);
-				break;
-			}
-
-			// If the type being pushed is a thread, push a LUA_TTHREAD state.
-#ifndef LAPI_GDEXTENSION
-			if (Ref<LuaFunctionRef> funcRef = Object::cast_to<LuaFunctionRef>(var.operator Object *()); funcRef.is_valid()) {
-#else
-			// blame this on https://github.com/godotengine/godot-cpp/issues/995
-			if (Ref<LuaFunctionRef> funcRef = dynamic_cast<LuaFunctionRef *>(var.operator Object *()); funcRef.is_valid()) {
-#endif
-				lua_rawgeti(state, LUA_REGISTRYINDEX, funcRef->getRef());
-				if (funcRef->getLuaState() != state) {
-					lua_xmove(funcRef->getLuaState(), state, 1);
-				}
-				break;
-			}
-
-			// If the type being pushed is a LuaCallableExtra. use mt_CallableExtra instead
-#ifndef LAPI_GDEXTENSION
-			if (Ref<LuaCallableExtra> func = Object::cast_to<LuaCallableExtra>(var.operator Object *()); func.is_valid()) {
-#else
-			// blame this on https://github.com/godotengine/godot-cpp/issues/995
-			if (Ref<LuaCallableExtra> func = dynamic_cast<LuaCallableExtra *>(var.operator Object *()); func.is_valid()) {
-#endif
-				Variant *userdata = (Variant *)lua_newuserdata(state, sizeof(Variant));
-				memnew_placement(userdata, Variant(var));
-				luaL_setmetatable(state, "mt_CallableExtra");
-				break;
-			}
-
-			Variant *userdata = (Variant *)lua_newuserdata(state, sizeof(Variant));
-			memnew_placement(userdata, Variant(var));
-			luaL_setmetatable(state, "mt_Object");
-			break;
-		}
-		case Variant::Type::CALLABLE: {
-			Callable callable = var.operator Callable();
-
-			if (!callable.is_valid() || callable.is_null()) {
-				lua_pushnil(state);
-				break;
-			}
-
-#ifndef LAPI_GDEXTENSION
-			if (callable.is_custom()) {
-				CallableCustom *custom = callable.get_custom();
-				LuaCallable *luaCallable = dynamic_cast<LuaCallable *>(custom);
-				if (luaCallable != nullptr) {
-					lua_rawgeti(state, LUA_REGISTRYINDEX, luaCallable->getFuncRef());
-					if (luaCallable->getLuaState() != state) {
-						lua_xmove(luaCallable->getLuaState(), state, 1);
-					}
-					break;
-				}
-
-				// A work around to preserve ref count of CallableCustoms
-				Ref<LuaCallableExtra> callableCustom;
-				callableCustom.instantiate();
-				callableCustom->setInfo(callable, 0, false, false);
-				LuaState::pushVariant(state, callableCustom);
-				break;
-			}
-#endif
-
-			Variant *userdata = (Variant *)lua_newuserdata(state, sizeof(Variant));
-			memnew_placement(userdata, Variant(var));
-			luaL_setmetatable(state, "mt_Callable");
-			break;
-		}
-		default:
-			lua_pushnil(state);
-			return LuaError::newError(vformat("can't pass Variants of type \"%s\" to Lua.", Variant::get_type_name(var.get_type())), LuaError::ERR_TYPE);
+		lua_settable(state, -3);
 	}
+
+	return nullptr;
+};
+
+// Push a GD Variant to the lua stack and returns a error if the type is not supported
+Ref<LuaError> LuaState::pushVariant(lua_State* state, const Variant& var) {
+	Variant::Type t = var.get_type();
+
+	switch (t) {
+	case Variant::Type::NIL:
+		lua_pushnil(state);
+		break;
+	case Variant::Type::STRING:
+		lua_pushstring(state, (var.operator String()).utf8().get_data());
+		break;
+	case Variant::Type::INT:
+		lua_pushinteger(state, (int64_t)var);
+		break;
+	case Variant::Type::FLOAT:
+		lua_pushnumber(state, var.operator double());
+		break;
+	case Variant::Type::BOOL:
+		lua_pushboolean(state, (bool)var);
+		break;
+	case Variant::Type::PACKED_BYTE_ARRAY:
+	{
+		const PackedByteArray& byte_array = var.operator PackedByteArray();
+		const uint8_t* data_ptr = byte_array.ptr();
+		lua_pushlstring(state, (const char*)data_ptr, byte_array.size());		
+	}
+	break;
+	case Variant::Type::PACKED_STRING_ARRAY:
+	{
+		Ref<LuaError> err = _push_array_helper<PackedStringArray>(state, var);
+		if (!err.is_null()) return err;
+	}
+	break;
+	case Variant::Type::PACKED_INT64_ARRAY:
+	{
+		Ref<LuaError> err = _push_array_helper<PackedInt64Array>(state, var);
+		if (!err.is_null()) return err;
+	}
+	break;
+	case Variant::Type::PACKED_INT32_ARRAY:
+	{
+		Ref<LuaError> err = _push_array_helper<PackedInt32Array>(state, var);
+		if (!err.is_null()) return err;
+	}
+	break;
+	case Variant::Type::PACKED_FLOAT64_ARRAY:
+	{
+		Ref<LuaError> err = _push_array_helper<PackedFloat64Array>(state, var);
+		if (!err.is_null()) return err;
+	}
+	break;
+	case Variant::Type::PACKED_FLOAT32_ARRAY:
+	{
+		Ref<LuaError> err = _push_array_helper<PackedFloat32Array>(state, var);
+		if (!err.is_null()) return err;
+	}
+	break;
+	case Variant::Type::PACKED_VECTOR2_ARRAY:
+	{
+		Ref<LuaError> err = _push_array_helper<PackedVector2Array>(state, var);
+		if (!err.is_null()) return err;
+	}
+	break;
+	case Variant::Type::PACKED_VECTOR3_ARRAY:
+	{
+		Ref<LuaError> err = _push_array_helper<PackedVector3Array>(state, var);
+		if (!err.is_null()) return err;
+	}
+	break;
+	case Variant::Type::PACKED_COLOR_ARRAY:
+	{
+		Ref<LuaError> err = _push_array_helper<PackedColorArray>(state, var);
+		if (!err.is_null()) return err;
+	}
+	break;
+	case Variant::Type::ARRAY: {
+		const Array& array = var.operator Array();
+		lua_createtable(state, array.size(), 0);
+
+		for (int i = 0; i < array.size(); i++) {
+			Variant key = i + 1;
+			const Variant& value = array[i];
+
+			Ref<LuaError> err = pushVariant(state, key);
+			if (!err.is_null()) {
+				return err;
+			}
+
+			err = pushVariant(state, value);
+			if (!err.is_null()) {
+				return err;
+			}
+
+			lua_settable(state, -3);
+		}
+		break;
+	}
+	case Variant::Type::DICTIONARY: {
+		Dictionary dict = var.operator Dictionary();
+		lua_createtable(state, 0, dict.size());
+
+		Array keys = dict.keys();
+		for (int i = 0; i < dict.size(); i++) {
+			const Variant& key = keys[i];
+			const Variant& value = dict[key];
+
+			Ref<LuaError> err = pushVariant(state, key);
+			if (!err.is_null()) {
+				return err;
+			}
+
+			err = pushVariant(state, value);
+			if (!err.is_null()) {
+				return err;
+			}
+
+			lua_settable(state, -3);
+			}
+		break;
+		}
+	case Variant::Type::VECTOR2: {
+		Variant* userdata = (Variant*)lua_newuserdata(state, sizeof(Variant));
+		memnew_placement(userdata, Variant(var));
+		luaL_setmetatable(state, "mt_Vector2");
+		break;
+	}
+	case Variant::Type::VECTOR3: {
+		Variant* userdata = (Variant*)lua_newuserdata(state, sizeof(Variant));
+		memnew_placement(userdata, Variant(var));
+		luaL_setmetatable(state, "mt_Vector3");
+		break;
+	}
+	case Variant::Type::COLOR: {
+		Variant* userdata = (Variant*)lua_newuserdata(state, sizeof(Variant));
+		memnew_placement(userdata, Variant(var));
+		luaL_setmetatable(state, "mt_Color");
+		break;
+	}
+	case Variant::Type::RECT2: {
+		Variant* userdata = (Variant*)lua_newuserdata(state, sizeof(Variant));
+		memnew_placement(userdata, Variant(var));
+		luaL_setmetatable(state, "mt_Rect2");
+		break;
+	}
+	case Variant::Type::PLANE: {
+		Variant* userdata = (Variant*)lua_newuserdata(state, sizeof(Variant));
+		memnew_placement(userdata, Variant(var));
+		luaL_setmetatable(state, "mt_Plane");
+		break;
+	}
+	case Variant::Type::SIGNAL: {
+		Variant* userdata = (Variant*)lua_newuserdata(state, sizeof(Variant));
+		memnew_placement(userdata, Variant(var));
+		luaL_setmetatable(state, "mt_Signal");
+		break;
+	}
+	case Variant::Type::OBJECT: {
+		if (var.operator Object * () == nullptr) {
+			lua_pushnil(state);
+			break;
+		}
+
+		// If the type being pushed is a lua error, Raise an error
+#ifndef LAPI_GDEXTENSION
+		if (Ref<LuaError> err = Object::cast_to<LuaError>(var.operator Object * ()); !err.is_null()) {
+#else
+			// blame this on https://github.com/godotengine/godot-cpp/issues/995
+		if (Ref<LuaError> err = dynamic_cast<LuaError*>(var.operator Object * ()); !err.is_null()) {
+#endif
+			lua_pushstring(state, err->getMessage().utf8().get_data());
+			lua_error(state);
+			break;
+		}
+
+		// If the type being pushed is a tuple, push its content instead.
+#ifndef LAPI_GDEXTENSION
+		if (Ref<LuaTuple> tuple = Object::cast_to<LuaTuple>(var.operator Object * ()); tuple.is_valid()) {
+#else
+			// blame this on https://github.com/godotengine/godot-cpp/issues/995
+		if (Ref<LuaTuple> tuple = dynamic_cast<LuaTuple*>(var.operator Object * ()); tuple.is_valid()) {
+#endif
+			for (int i = 0; i < tuple->size(); i++) {
+				Variant value = tuple->get(i);
+				pushVariant(state, value);
+			}
+			break;
+		}
+
+		// If the type being pushed is a thread, push a LUA_TTHREAD state.
+#ifndef LAPI_GDEXTENSION
+		if (Ref<LuaCoroutine> thread = Object::cast_to<LuaCoroutine>(var.operator Object * ()); thread.is_valid()) {
+#else
+			// blame this on https://github.com/godotengine/godot-cpp/issues/995
+		if (Ref<LuaCoroutine> thread = dynamic_cast<LuaCoroutine*>(var.operator Object * ()); thread.is_valid()) {
+#endif
+			return LuaError::newError("pushing threads is currently not supported.", LuaError::ERR_TYPE);
+			break;
+		}
+
+		// If the type being pushed is a thread, push a LUA_TTHREAD state.
+#ifndef LAPI_GDEXTENSION
+		if (Ref<LuaFunctionRef> funcRef = Object::cast_to<LuaFunctionRef>(var.operator Object * ()); funcRef.is_valid()) {
+#else
+			// blame this on https://github.com/godotengine/godot-cpp/issues/995
+		if (Ref<LuaFunctionRef> funcRef = dynamic_cast<LuaFunctionRef*>(var.operator Object * ()); funcRef.is_valid()) {
+#endif
+			lua_rawgeti(state, LUA_REGISTRYINDEX, funcRef->getRef());
+			if (funcRef->getLuaState() != state) {
+				lua_xmove(funcRef->getLuaState(), state, 1);
+			}
+			break;
+		}
+
+		// If the type being pushed is a LuaCallableExtra. use mt_CallableExtra instead
+#ifndef LAPI_GDEXTENSION
+		if (Ref<LuaCallableExtra> func = Object::cast_to<LuaCallableExtra>(var.operator Object * ()); func.is_valid()) {
+#else
+			// blame this on https://github.com/godotengine/godot-cpp/issues/995
+		if (Ref<LuaCallableExtra> func = dynamic_cast<LuaCallableExtra*>(var.operator Object * ()); func.is_valid()) {
+#endif
+			Variant* userdata = (Variant*)lua_newuserdata(state, sizeof(Variant));
+			memnew_placement(userdata, Variant(var));
+			luaL_setmetatable(state, "mt_CallableExtra");
+			break;
+		}
+
+		Variant* userdata = (Variant*)lua_newuserdata(state, sizeof(Variant));
+		memnew_placement(userdata, Variant(var));
+		luaL_setmetatable(state, "mt_Object");
+		break;
+		}
+	case Variant::Type::CALLABLE: {
+		Callable callable = var.operator Callable();
+
+		if (!callable.is_valid() || callable.is_null()) {
+			lua_pushnil(state);
+			break;
+		}
+
+#ifndef LAPI_GDEXTENSION
+		if (callable.is_custom()) {
+			CallableCustom* custom = callable.get_custom();
+			LuaCallable* luaCallable = dynamic_cast<LuaCallable*>(custom);
+			if (luaCallable != nullptr) {
+				lua_rawgeti(state, LUA_REGISTRYINDEX, luaCallable->getFuncRef());
+				if (luaCallable->getLuaState() != state) {
+					lua_xmove(luaCallable->getLuaState(), state, 1);
+				}
+				break;
+			}
+
+			// A work around to preserve ref count of CallableCustoms
+			Ref<LuaCallableExtra> callableCustom;
+			callableCustom.instantiate();
+			callableCustom->setInfo(callable, 0, false, false);
+			LuaState::pushVariant(state, callableCustom);
+			break;
+		}
+#endif
+
+		Variant* userdata = (Variant*)lua_newuserdata(state, sizeof(Variant));
+		memnew_placement(userdata, Variant(var));
+		luaL_setmetatable(state, "mt_Callable");
+		break;
+	}
+	default:
+		lua_pushnil(state);
+		return LuaError::newError(vformat("can't pass Variants of type \"%s\" to Lua.", Variant::get_type_name(var.get_type())), LuaError::ERR_TYPE);
+		}
 	return nullptr;
 }
 
@@ -488,7 +563,7 @@ Variant LuaState::getVariant(lua_State *state, int index) {
 
 			int len = lua_tointeger(state, -1);
 			lua_pop(state, 1);
-			// len should be 0 if the type is table and not a array
+			// len should be 0 if the type is table and not an array
 			if (len) {
 				Array array;
 				for (int i = 1; i <= len; i++) {

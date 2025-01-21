@@ -130,7 +130,7 @@ Variant LuaAPI::pullVariant(String name) {
 }
 
 // Calls LuaState::callFunction()
-Variant LuaAPI::callFunction(String functionName, Array args) {
+Variant LuaAPI::callFunction(String functionName, const Array& args) {
 	return state.callFunction(functionName, args);
 }
 

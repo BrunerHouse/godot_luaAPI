@@ -28,19 +28,19 @@ public:
 
 	Variant getVar(int index = -1) const;
 	Variant pullVariant(String name);
-	Variant callFunction(String functionName, Array args);
+	Variant callFunction(String functionName, const Array& args);
 
 	Variant getRegistryValue(String name);
 
-	Ref<LuaError> setRegistryValue(String name, Variant var);
+	Ref<LuaError> setRegistryValue(String name, const Variant& var);
 	Ref<LuaError> bindLibraries(TypedArray<String> libs);
-	Ref<LuaError> pushVariant(Variant var) const;
-	Ref<LuaError> pushGlobalVariant(String name, Variant var);
+	Ref<LuaError> pushVariant(const Variant& var) const;
+	Ref<LuaError> pushGlobalVariant(String name, const Variant& var);
 	Ref<LuaError> handleError(int lua_error) const;
 
 	static LuaAPI *getAPI(lua_State *state);
 
-	static Ref<LuaError> pushVariant(lua_State *state, Variant var);
+	static Ref<LuaError> pushVariant(lua_State *state, const Variant& var);
 	static Ref<LuaError> handleError(lua_State *state, int lua_error);
 #ifndef LAPI_GDEXTENSION
 	static Ref<LuaError> handleError(const StringName &func, Callable::CallError error, const Variant **p_arguments, int argc);
