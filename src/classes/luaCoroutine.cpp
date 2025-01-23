@@ -162,7 +162,9 @@ Variant LuaCoroutine::resume(Array args) {
 			return LuaError::newError("Cannot have more than one connection to the coroutine_resume signal", LuaError::ERR_RUNTIME);
 		}
 
-		Callable callback = resume_connections[0].callable;
+		//Callable callback = resume_connections[0].callable;
+		auto connection = *(resume_connections.front());
+		Callable callback = connection->callable;
 		if (!callback.is_valid()) {
 			return LuaError::newError("Invalid callable connected to the coroutine_resume signal", LuaError::ERR_RUNTIME);
 		}

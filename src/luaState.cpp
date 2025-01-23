@@ -46,15 +46,16 @@ lua_State *LuaState::getState() const {
 #include <iostream>
 
 // Binds lua libraries with the lua state
-Ref<LuaError> LuaState::bindLibraries(TypedArray<String> libs) {
+Ref<LuaError> LuaState::bindLibraries(Array libs) {
 	for (int i = 0; i < libs.size(); i++) {
 		if (!loadLuaLibrary(L, libs[i])) {
 			return LuaError::newError(vformat("Library \"%s\" does not exist.", libs[i]), LuaError::ERR_RUNTIME);
 		}
-		if (libs[i] == "base") {
+		if (libs[i] == String("base")) {
 			lua_register(L, "print", luaPrint);
 		}
 	}
+
 	return nullptr;
 }
 
