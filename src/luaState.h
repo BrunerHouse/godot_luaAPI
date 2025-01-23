@@ -28,7 +28,7 @@ public:
 
 	Variant getVar(int index = -1) const;
 	Variant pullVariant(String name);
-	Variant callFunction(String functionName, const Array& args);
+	Variant callFunction(const String& functionName, const Array& args);
 
 	Variant getRegistryValue(String name);
 
@@ -61,8 +61,8 @@ private:
 	lua_State *L = nullptr;
 
 	// Helper functions for recursive indexing
-	void indexForReading(String name); // Puts the object on the stack
-	String indexForWriting(String name); // Puts the table on the stack and gives the last name. (Please make sure the table is not nil.)
+	void indexForReading(const String& name); // Puts the object on the stack
+	String indexForWriting(const String& name); // Puts the table on the stack and gives the last name. (Please make sure the table is not nil.)
 
 	void exposeConstructors();
 	void createVector2Metatable();

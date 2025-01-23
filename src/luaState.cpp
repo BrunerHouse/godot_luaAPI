@@ -70,24 +70,54 @@ void LuaState::setHook(Callable hook, int mask, int count) {
 	lua_sethook(L, luaHook, mask, count);
 }
 
-void LuaState::indexForReading(String name) {
-#ifndef LAPI_GDEXTENSION
-	Vector<String> strs = name.split(".");
-#else
-	PackedStringArray strs = name.split(".");
-#endif
-	for (String str : strs) {
-		if (lua_type(L, -1) != LUA_TTABLE) {
-			lua_pop(L, 1);
-			lua_pushnil(L);
-			break;
+void LuaState::indexForReading(const String& name) {
+
+	//
+	// Access the raw UTF-8 data and length of the stri
+	//
+	// The native Godot string is quite odd, seemingly 4 bytes per character?
+	// This conversion to utf8 is quite expensive and needs to be emliminated when I can
+	// spend more energy on it.
+	const uint8_t* data = reinterpret_cast<const uint8_t*>(name.utf8().ptr()); 
+
+	int length = name.length();
+
+	// Delimiter to split the string (.)
+	const uint8_t delimiter = '.';
+
+	const uint8_t* start = data;
+	const uint8_t* end;
+
+	while (lua_type(L, -1) == LUA_TTABLE)
+	{
+		// Find the next delimiter ('.')
+		end = std::find(start, data + length, delimiter);
+
+		// Calculate the token length
+		int token_length = end - start;
+
+		// Push the token directly onto the Lua stack using lua_pushlstring
+		lua_pushlstring(L, reinterpret_cast<const char*>(start), token_length);
+
+		// Retrieve the field value from the table
+		lua_gettable(L, -2);
+		lua_remove(L, -2);  // Remove the previous table from the stack
+
+		// If no more delimiters are found, stop
+		if (end == data + length) {
+			return;
 		}
-		lua_getfield(L, -1, str.utf8().get_data());
-		lua_remove(L, -2);
+
+		// Move past the delimiter to the next token
+		start = end + 1;
 	}
+
+	// Handle the error case when the top of the stack is not a table
+	lua_pop(L, 1);  // Clean up the invalid value
+	lua_pushnil(L); // Push nil as the result
 }
 
-String LuaState::indexForWriting(String name) {
+String LuaState::indexForWriting(const String& name) {
 #ifndef LAPI_GDEXTENSION
 	Vector<String> strs = name.split(".");
 #else
@@ -164,7 +194,7 @@ Ref<LuaError> LuaState::setRegistryValue(String name, const Variant& var) {
 }
 
 // call a Lua function from GDScript
-Variant LuaState::callFunction(String functionName, const Array& args) {
+Variant LuaState::callFunction(const String& functionName, const Array& args) {
 
 	// push the error handler on to the stack
 	lua_pushcfunction(L, luaErrorHandler);
